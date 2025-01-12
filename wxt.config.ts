@@ -4,8 +4,15 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   extensionApi: 'chrome',
   manifest: {
-    permissions: ['storage', 'tabs'],
-    host_permissions: ['*://*.twitter.com/*', '*://*.x.com/*']
+    permissions: [
+      'cookies',
+      'https://*.twitter.com/*',
+      'https://*.x.com/*'
+    ],
+    host_permissions: [
+      'https://*.twitter.com/*',
+      'https://*.x.com/*'
+    ]
   },
   modules: ['@wxt-dev/module-react'],
   runner: {

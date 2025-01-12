@@ -6,9 +6,26 @@
     <title>X Scraper</title>
     <style>
         body {
-            width: 300px;
+            width: 400px;
             padding: 16px;
             font-family: system-ui, -apple-system, sans-serif;
+        }
+        .control-group {
+            margin-bottom: 16px;
+        }
+        .control-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #536471;
+        }
+        select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #cfd9de;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 12px;
         }
         button {
             width: 100%;
@@ -30,46 +47,142 @@
         #result {
             margin-top: 16px;
             font-size: 14px;
+            line-height: 1.4;
+            color: #0f1419;
+        }
+        .tweet, .comment {
+            padding: 12px;
+            border: 1px solid #cfd9de;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .author {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .timestamp {
             color: #536471;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        .content {
+            margin-bottom: 8px;
+            white-space: pre-wrap;
+        }
+        .stats {
+            color: #536471;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        .media-container {
+            margin: 8px 0;
+            max-width: 100%;
+        }
+        .media-container img, .media-container video {
+            max-width: 100%;
+            border-radius: 4px;
+        }
+        .comments-header {
+            font-weight: 600;
+            margin: 16px 0 8px;
+            color: #0f1419;
+        }
+        .success {
+            color: #00ba7c;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        .error {
+            color: #f4212e;
+            font-weight: 600;
         }
     </style>
 </head>
 <body>
+    <div class="control-group">
+        <label class="control-label">选择获取页数</label>
+        <select id="pageCount">
+            <option value="1">1页 (约10条评论)</option>
+            <option value="2">2页 (约20条评论)</option>
+            <option value="3">3页 (约30条评论)</option>
+            <option value="4">4页 (约40条评论)</option>
+            <option value="5">5页 (约50条评论)</option>
+        </select>
+    </div>
     <button id="scrapeButton">获取当前推文内容</button>
     <div id="result"></div>
     <script type="module">
         const button = document.getElementById('scrapeButton');
         const resultDiv = document.getElementById('result');
+        const pageCountSelect = document.getElementById('pageCount');
+
+        function renderMedia(mediaItems) {
+            if (!mediaItems?.length) return '';
+            return mediaItems.map(media => {
+                if (media.type === 'photo') {
+                    return `<div class="media-container">
+                        <img src="${media.url}" alt="Tweet media" />
+                    </div>`;
+                } else if (media.type === 'video') {
+                    return `<div class="media-container">
+                        <video src="${media.url}" controls></video>
+                    </div>`;
+                }
+                return '';
+            }).join('');
+        }
+
+        function renderComments(comments) {
+            if (!comments?.length) return '';
+            return `
+                <div class="comments-header">评论 (${comments.length})</div>
+                ${comments.map(comment => `
+                    <div class="comment">
+                        <div class="author">${comment.author}</div>
+                        <div class="timestamp">${comment.timestamp}</div>
+                        <div class="content">${comment.content}</div>
+                        ${renderMedia(comment.media)}
+                        <div class="stats">❤️ ${comment.likes}</div>
+                    </div>
+                `).join('')}
+            `;
+        }
 
         button.addEventListener('click', async () => {
-            // 获取当前标签页
             const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
             if (!tab?.id) return;
 
             try {
-                // 更新按钮状态
                 button.disabled = true;
                 button.textContent = '正在获取...';
                 resultDiv.textContent = '';
 
-                // 发送消息到内容脚本
-                const response = await browser.tabs.sendMessage(tab.id, { type: 'SCRAPE_TWEET' });
+                const pageCount = parseInt(pageCountSelect.value);
+                const response = await browser.tabs.sendMessage(tab.id, { 
+                    type: 'SCRAPE_TWEET',
+                    pageCount
+                });
                 
                 if (response?.data) {
                     const tweet = response.data;
                     resultDiv.innerHTML = `
-                        <div style="margin-bottom: 8px;">✅ 获取成功</div>
-                        <div>作者: ${tweet.author}</div>
-                        <div>内容: ${tweet.content.slice(0, 50)}${tweet.content.length > 50 ? '...' : ''}</div>
-                        <div>评论数: ${tweet.comments.length}</div>
-                        <div>点赞数: ${tweet.likes}</div>
-                        <div>转发数: ${tweet.retweets}</div>
+                        <div class="success">✅ 获取成功</div>
+                        <div class="tweet">
+                            <div class="author">${tweet.author}</div>
+                            <div class="timestamp">${tweet.timestamp}</div>
+                            <div class="content">${tweet.content}</div>
+                            ${renderMedia(tweet.media)}
+                            <div class="stats">
+                                ❤️ ${tweet.likes} · 🔄 ${tweet.retweets}
+                            </div>
+                        </div>
+                        ${renderComments(tweet.comments)}
                     `;
                 } else {
-                    resultDiv.textContent = '❌ 未能找到推文内容';
+                    resultDiv.innerHTML = '<div class="error">❌ 未能找到推文内容</div>';
                 }
             } catch (error) {
-                resultDiv.textContent = '❌ 获取失败，请确保当前页面是推文页面';
+                resultDiv.innerHTML = '<div class="error">❌ 获取失败，请确保当前页面是推文页面</div>';
             } finally {
                 button.disabled = false;
                 button.textContent = '获取当前推文内容';
