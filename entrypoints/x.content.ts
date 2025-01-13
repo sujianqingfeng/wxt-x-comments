@@ -1,28 +1,6 @@
-import { format, parseISO } from 'date-fns';
+import { format} from 'date-fns';
 import type { Root, Instruction, Entry } from '../types';
-
-interface MediaContent {
-  type: 'photo' | 'video';
-  url: string;
-}
-
-interface Tweet {
-  content: string;
-  author: string;
-  timestamp: string;
-  likes: number;
-  retweets: number;
-  comments: Comment[];
-  media?: MediaContent[];
-}
-
-interface Comment {
-  content: string;
-  author: string;
-  timestamp: string;
-  likes: number;
-  media?: MediaContent[];
-}
+import { Tweet, onMessage, type Comment } from '../messages';
 
 // Additional type for promoted content
 interface PromotedMetadata {
@@ -334,16 +312,10 @@ async function scrapeTweet(pageCount: number = 1): Promise<Tweet> {
 export default defineContentScript({
   matches: ['*://*.twitter.com/*', '*://*.x.com/*'],
   async main() {
-    browser.runtime.onMessage.addListener((message) => {
-      if (message.type === 'SCRAPE_TWEET') {
-        // Return a promise that resolves with the data
-        return (async () => {
-          const tweet = await scrapeTweet(message.pageCount || 1);
-          console.log("Tweet data:", tweet);
-          return { data: tweet };
-        })();
-      }
-      return false;
+    onMessage('scrapeTweet', async (message) => {
+      const tweet = await scrapeTweet(message.data);
+      console.log("Tweet data:", tweet);
+      return tweet;
     });
   }
 }); 
