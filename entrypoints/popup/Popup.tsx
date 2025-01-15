@@ -17,11 +17,11 @@ const MediaRenderer = ({ mediaItems }: { mediaItems?: MediaContent[] }) => {
   return (
     <>
       {mediaItems.map((media, index) => (
-        <div key={index} className="media-container">
+        <div key={index} className="my-2 max-w-full">
           {media.type === 'photo' ? (
-            <img src={media.url} alt="Tweet media" />
+            <img src={media.url} alt="Tweet media" className="max-w-full rounded" />
           ) : media.type === 'video' ? (
-            <video src={media.url} controls />
+            <video src={media.url} controls className="max-w-full rounded" />
           ) : null}
         </div>
       ))}
@@ -34,14 +34,14 @@ const CommentList = ({ comments }: { comments?: Comment[] }) => {
 
   return (
     <>
-      <div className="comments-header">评论 ({comments.length})</div>
+      <div className="font-semibold my-4 text-gray-900">评论 ({comments.length})</div>
       {comments.map((comment, index) => (
-        <div key={index} className="comment">
-          <div className="author">{comment.author}</div>
-          <div className="timestamp">{comment.timestamp}</div>
-          <div className="content">{comment.content}</div>
+        <div key={index} className="p-3 border border-gray-200 rounded-lg mb-3">
+          <div className="font-semibold mb-1">{comment.author}</div>
+          <div className="text-sm text-gray-500 mb-2">{comment.timestamp}</div>
+          <div className="mb-2 whitespace-pre-wrap">{comment.content}</div>
           <MediaRenderer mediaItems={comment.media} />
-          <div className="stats">❤️ {comment.likes}</div>
+          <div className="text-sm text-gray-500">❤️ {comment.likes}</div>
         </div>
       ))}
     </>
@@ -50,13 +50,13 @@ const CommentList = ({ comments }: { comments?: Comment[] }) => {
 
 const TweetContent = ({ tweet }: { tweet: Tweet }) => (
   <>
-    <div className="success">✅ 获取成功</div>
-    <div className="tweet">
-      <div className="author">{tweet.author}</div>
-      <div className="timestamp">{tweet.timestamp}</div>
-      <div className="content">{tweet.content}</div>
+    <div className="text-green-600 font-semibold mb-3">✅ 获取成功</div>
+    <div className="p-3 border border-gray-200 rounded-lg mb-3">
+      <div className="font-semibold mb-1">{tweet.author}</div>
+      <div className="text-sm text-gray-500 mb-2">{tweet.timestamp}</div>
+      <div className="mb-2 whitespace-pre-wrap">{tweet.content}</div>
       <MediaRenderer mediaItems={tweet.media} />
-      <div className="stats">
+      <div className="text-sm text-gray-500">
         ❤️ {tweet.likes} · 🔄 {tweet.retweets}
       </div>
     </div>
@@ -97,11 +97,15 @@ export default function Popup() {
   };
 
   return (
-    <div className="container">
+    <div className="w-[400px] p-4 font-sans">
       <form onSubmit={handleScrape}>
-        <div className="control-group">
-          <label className="control-label">选择获取页数</label>
-          <select name="pageCount" disabled={loading}>
+        <div className="mb-4">
+          <label className="block mb-2 text-sm text-gray-600">选择获取页数</label>
+          <select 
+            name="pageCount" 
+            disabled={loading}
+            className="w-full p-2 border border-gray-300 rounded text-sm mb-3 disabled:bg-gray-100"
+          >
             <option value="1">1页 (约10条评论)</option>
             <option value="2">2页 (约20条评论)</option>
             <option value="3">3页 (约30条评论)</option>
@@ -109,13 +113,17 @@ export default function Popup() {
             <option value="5">5页 (约50条评论)</option>
           </select>
         </div>
-        <button type="submit" disabled={loading}>
+        <button 
+          type="submit" 
+          disabled={loading}
+          className="w-full p-2 bg-[#1DA1F2] text-white rounded text-sm hover:bg-[#1a8cd8] disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
           {loading ? '正在获取...' : '获取当前推文内容'}
         </button>
       </form>
 
-      <div className="result">
-        {error && <div className="error">❌ {error}</div>}
+      <div className="mt-4 text-sm leading-relaxed text-gray-900">
+        {error && <div className="text-red-500 font-semibold">❌ {error}</div>}
         {tweet && <TweetContent tweet={tweet} />}
       </div>
     </div>
