@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MediaContent, Comment, sendMessage } from '../../messages';
+import { storage } from 'wxt/storage';
 
 interface Tweet {
   author: string;
@@ -10,6 +11,8 @@ interface Tweet {
   retweets: number;
   comments?: Comment[];
 }
+
+const STORAGE_KEY = 'local:savedTweet';
 
 const MediaRenderer = ({ mediaItems }: { mediaItems?: MediaContent[] }) => {
   if (!mediaItems?.length) return null;
@@ -69,6 +72,17 @@ export default function Popup() {
   const [error, setError] = useState<string | null>(null);
   const [tweet, setTweet] = useState<Tweet | null>(null);
 
+  // Load saved tweet on component mount
+  useEffect(() => {
+    const loadSavedTweet = async () => {
+      const savedTweet = await storage.getItem<Tweet>(STORAGE_KEY);
+      if (savedTweet) {
+        setTweet(savedTweet);
+      }
+    };
+    loadSavedTweet();
+  }, []);
+
   const handleScrape = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
@@ -76,7 +90,7 @@ export default function Popup() {
 
     try {
       const formData = new FormData(event.currentTarget);
-      const pageCount = parseInt(formData.get('pageCount') as string);
+      const pageCount = Number.parseInt(formData.get('pageCount') as string);
       
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!activeTab?.id) {
@@ -86,6 +100,8 @@ export default function Popup() {
       const result = await sendMessage('scrapeTweet', pageCount, { tabId: activeTab.id });
       if (result) {
         setTweet(result);
+        // Save tweet to storage
+        await storage.setItem(STORAGE_KEY, result);
       } else {
         setError('未能找到推文内容');
       }
@@ -96,12 +112,18 @@ export default function Popup() {
     }
   };
 
+  const handleClear = async () => {
+    await storage.removeItem(STORAGE_KEY);
+    setTweet(null);
+  };
+
   return (
     <div className="w-[400px] p-4 font-sans">
       <form onSubmit={handleScrape}>
         <div className="mb-4">
-          <label className="block mb-2 text-sm text-gray-600">选择获取页数</label>
+          <label htmlFor="pageCount" className="block mb-2 text-sm text-gray-600">选择获取页数</label>
           <select 
+            id="pageCount"
             name="pageCount" 
             disabled={loading}
             className="w-full p-2 border border-gray-300 rounded text-sm mb-3 disabled:bg-gray-100"
@@ -113,13 +135,24 @@ export default function Popup() {
             <option value="5">5页 (约50条评论)</option>
           </select>
         </div>
-        <button 
-          type="submit" 
-          disabled={loading}
-          className="w-full p-2 bg-[#1DA1F2] text-white rounded text-sm hover:bg-[#1a8cd8] disabled:bg-gray-400 disabled:cursor-not-allowed"
-        >
-          {loading ? '正在获取...' : '获取当前推文内容'}
-        </button>
+        <div className="flex gap-2">
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="flex-1 p-2 bg-[#1DA1F2] text-white rounded text-sm hover:bg-[#1a8cd8] disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {loading ? '正在获取...' : '获取当前推文内容'}
+          </button>
+          {tweet && (
+            <button 
+              type="button"
+              onClick={handleClear}
+              className="px-4 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+            >
+              清除
+            </button>
+          )}
+        </div>
       </form>
 
       <div className="mt-4 text-sm leading-relaxed text-gray-900">

@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@webext-core/messaging": "^2.2.0",
+    "@wxt-dev/storage": "^1.0.1",
     "date-fns": "^4.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
