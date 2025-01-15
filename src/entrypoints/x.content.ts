@@ -1,6 +1,7 @@
-import { format} from 'date-fns';
+import { format } from 'date-fns';
 import type { Root, Instruction, Entry } from '../types';
-import { Tweet, onMessage, type Comment } from '../messages';
+import { onMessage } from '../messages';
+import type { Tweet, Comment } from '../messages';
 
 // Additional type for promoted content
 interface PromotedMetadata {
@@ -41,15 +42,16 @@ async function getTweetId(): Promise<string> {
   return match ? match[1] : '';
 }
 
-async function scrapeTweet(pageCount: number = 1): Promise<Tweet> {
-  const tweet: Tweet = {
+async function scrapeTweet(pageCount = 1) {
+  const tweet = {
     content: '',
     author: '',
     timestamp: '',
     likes: 0,
     retweets: 0,
-    comments: []
-  };
+    comments: [] as Comment[],
+    media: [] as Tweet['media']
+  } satisfies Tweet;
 
   const tweetId = await getTweetId();
   if (!tweetId) return tweet;
@@ -134,14 +136,14 @@ async function scrapeTweet(pageCount: number = 1): Promise<Tweet> {
       xhr.withCredentials = true;
 
       return new Promise((resolve, reject) => {
-        xhr.onload = function() {
+        xhr.onload = () => {
           if (xhr.status === 200) {
             resolve(JSON.parse(xhr.responseText));
           } else {
             reject(new Error(`HTTP error! status: ${xhr.status}`));
           }
         };
-        xhr.onerror = function() {
+        xhr.onerror = () => {
           reject(new Error('Network error occurred'));
         };
         xhr.send();
@@ -173,7 +175,7 @@ async function scrapeTweet(pageCount: number = 1): Promise<Tweet> {
     const userData = tweetData.core?.user_results?.result;
     
     // Function to clean tweet content by removing t.co URLs and author mentions
-    function cleanTweetContent(content: string, isComment: boolean = false, authorUsername?: string): string {
+    function cleanTweetContent(content: string, isComment = false, authorUsername?: string) {
       // Remove t.co URLs
       let cleanContent = content.replace(/\s*https:\/\/t\.co\/\w+/g, '');
       

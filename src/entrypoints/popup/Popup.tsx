@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { MediaContent, Comment, sendMessage } from '../../messages';
+import { sendMessage } from '../../messages';
+import type { MediaContent, Comment } from '../../messages';
 import { storage } from 'wxt/storage';
 
 interface Tweet {
@@ -18,17 +19,19 @@ const MediaRenderer = ({ mediaItems }: { mediaItems?: MediaContent[] }) => {
   if (!mediaItems?.length) return null;
   
   return (
-    <>
-      {mediaItems.map((media, index) => (
-        <div key={index} className="my-2 max-w-full">
+    <div className="grid grid-cols-2 gap-2 my-3">
+      {mediaItems.map((media) => (
+        <div key={media.url} className="relative group overflow-hidden rounded-xl bg-gray-100">
           {media.type === 'photo' ? (
-            <img src={media.url} alt="Tweet media" className="max-w-full rounded" />
+            <img src={media.url} alt="Tweet media" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
           ) : media.type === 'video' ? (
-            <video src={media.url} controls className="max-w-full rounded" />
+            <video src={media.url} controls className="w-full rounded-xl" poster={media.url}>
+              <track kind="captions" />
+            </video>
           ) : null}
         </div>
       ))}
-    </>
+    </div>
   );
 };
 
@@ -36,35 +39,60 @@ const CommentList = ({ comments }: { comments?: Comment[] }) => {
   if (!comments?.length) return null;
 
   return (
-    <>
-      <div className="font-semibold my-4 text-gray-900">评论 ({comments.length})</div>
-      {comments.map((comment, index) => (
-        <div key={index} className="p-3 border border-gray-200 rounded-lg mb-3">
-          <div className="font-semibold mb-1">{comment.author}</div>
-          <div className="text-sm text-gray-500 mb-2">{comment.timestamp}</div>
-          <div className="mb-2 whitespace-pre-wrap">{comment.content}</div>
-          <MediaRenderer mediaItems={comment.media} />
-          <div className="text-sm text-gray-500">❤️ {comment.likes}</div>
-        </div>
-      ))}
-    </>
+    <div className="mt-6 space-y-4">
+      <div className="flex items-center gap-2 text-gray-700">
+        <span className="font-medium">评论</span>
+        <span className="px-2 py-0.5 text-sm bg-gray-100 rounded-full">{comments.length}</span>
+      </div>
+      <div className="space-y-3">
+        {comments.map((comment) => (
+          <div key={`${comment.author}-${comment.timestamp}`} 
+               className="p-4 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors duration-200">
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-medium text-gray-900">{comment.author}</div>
+              <div className="text-sm text-gray-500">{comment.timestamp}</div>
+            </div>
+            <div className="text-gray-700 whitespace-pre-wrap mb-3">{comment.content}</div>
+            <MediaRenderer mediaItems={comment.media} />
+            <div className="flex items-center gap-1 text-sm text-gray-500">
+              <span className="inline-flex items-center gap-1">
+                <span>❤️</span>
+                <span>{comment.likes.toLocaleString()}</span>
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 };
 
 const TweetContent = ({ tweet }: { tweet: Tweet }) => (
-  <>
-    <div className="text-green-600 font-semibold mb-3">✅ 获取成功</div>
-    <div className="p-3 border border-gray-200 rounded-lg mb-3">
-      <div className="font-semibold mb-1">{tweet.author}</div>
-      <div className="text-sm text-gray-500 mb-2">{tweet.timestamp}</div>
-      <div className="mb-2 whitespace-pre-wrap">{tweet.content}</div>
+  <div className="animate-fadeIn">
+    <div className="flex items-center gap-2 text-green-600 font-medium mb-4">
+      <span className="text-lg">✅</span>
+      <span>获取成功</span>
+    </div>
+    <div className="p-4 rounded-xl border border-gray-200 bg-white shadow-sm hover:border-gray-300 transition-colors duration-200">
+      <div className="flex items-center justify-between mb-2">
+        <div className="font-medium text-gray-900">{tweet.author}</div>
+        <div className="text-sm text-gray-500">{tweet.timestamp}</div>
+      </div>
+      <div className="text-gray-700 whitespace-pre-wrap mb-3">{tweet.content}</div>
       <MediaRenderer mediaItems={tweet.media} />
-      <div className="text-sm text-gray-500">
-        ❤️ {tweet.likes} · 🔄 {tweet.retweets}
+      <div className="flex items-center gap-4 text-sm text-gray-600">
+        <span className="inline-flex items-center gap-1">
+          <span>❤️</span>
+          <span>{tweet.likes.toLocaleString()}</span>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span>🔄</span>
+          <span>{tweet.retweets.toLocaleString()}</span>
+        </span>
       </div>
     </div>
     <CommentList comments={tweet.comments} />
-  </>
+  </div>
 );
 
 export default function Popup() {
@@ -117,16 +145,34 @@ export default function Popup() {
     setTweet(null);
   };
 
+  const handleExport = () => {
+    if (!tweet) return;
+
+    const jsonString = JSON.stringify(tweet, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tweet-${tweet.timestamp.replace(/[^0-9]/g, '')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div className="w-[400px] p-4 font-sans">
-      <form onSubmit={handleScrape}>
+    <div className="w-[450px] p-5 font-sans bg-gray-50 min-h-[300px]">
+      <form onSubmit={handleScrape} className="mb-6">
         <div className="mb-4">
-          <label htmlFor="pageCount" className="block mb-2 text-sm text-gray-600">选择获取页数</label>
+          <label htmlFor="pageCount" className="block mb-2 font-medium text-gray-700">
+            选择获取页数
+          </label>
           <select 
             id="pageCount"
             name="pageCount" 
             disabled={loading}
-            className="w-full p-2 border border-gray-300 rounded text-sm mb-3 disabled:bg-gray-100"
+            className="w-full p-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 disabled:bg-gray-100"
           >
             <option value="1">1页 (约10条评论)</option>
             <option value="2">2页 (约20条评论)</option>
@@ -139,24 +185,48 @@ export default function Popup() {
           <button 
             type="submit" 
             disabled={loading}
-            className="flex-1 p-2 bg-[#1DA1F2] text-white rounded text-sm hover:bg-[#1a8cd8] disabled:bg-gray-400 disabled:cursor-not-allowed"
+            className="flex-1 p-2.5 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 focus:ring-2 focus:ring-blue-300 transition-colors duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            {loading ? '正在获取...' : '获取当前推文内容'}
+            {loading ? (
+              <span className="inline-flex items-center gap-2">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <span>正在获取...</span>
+              </span>
+            ) : '获取当前推文内容'}
           </button>
           {tweet && (
-            <button 
-              type="button"
-              onClick={handleClear}
-              className="px-4 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
-            >
-              清除
-            </button>
+            <>
+              <button 
+                type="button"
+                onClick={handleExport}
+                className="px-4 py-2.5 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 focus:ring-2 focus:ring-emerald-300 transition-colors duration-200"
+              >
+                导出
+              </button>
+              <button 
+                type="button"
+                onClick={handleClear}
+                className="px-4 py-2.5 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 focus:ring-2 focus:ring-red-300 transition-colors duration-200"
+              >
+                清除
+              </button>
+            </>
           )}
         </div>
       </form>
 
-      <div className="mt-4 text-sm leading-relaxed text-gray-900">
-        {error && <div className="text-red-500 font-semibold">❌ {error}</div>}
+      <div className="space-y-4">
+        {error && (
+          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center gap-2 text-red-600 font-medium">
+              <span className="text-lg">❌</span>
+              <span>{error}</span>
+            </div>
+          </div>
+        )}
         {tweet && <TweetContent tweet={tweet} />}
       </div>
     </div>
