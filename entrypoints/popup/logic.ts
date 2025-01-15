@@ -42,8 +42,12 @@ button.addEventListener('click', async () => {
         button.textContent = '正在获取...';
         resultDiv.textContent = '';
 
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!activeTab?.id) {
+            throw new Error('No active tab found');
+        }
         const pageCount = parseInt(pageCountSelect.value);
-        const tweet = await sendMessage('scrapeTweet', pageCount);
+        const tweet = await sendMessage('scrapeTweet', pageCount, { tabId: activeTab.id });
         
         if (tweet) {
             resultDiv.innerHTML = `

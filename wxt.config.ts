@@ -6,11 +6,8 @@ export default defineConfig({
   manifest: {
     permissions: [
       'cookies',
-      'https://*.twitter.com/*',
-      'https://*.x.com/*'
     ],
     host_permissions: [
-      'https://*.twitter.com/*',
       'https://*.x.com/*'
     ]
   },

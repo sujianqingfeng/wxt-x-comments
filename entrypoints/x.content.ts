@@ -310,9 +310,10 @@ async function scrapeTweet(pageCount: number = 1): Promise<Tweet> {
 }
 
 export default defineContentScript({
-  matches: ['*://*.twitter.com/*', '*://*.x.com/*'],
+  matches: ['*://*.x.com/*'],
   async main() {
     onMessage('scrapeTweet', async (message) => {
+      console.log("🚀 ~ onMessage ~ message:", message)
       const tweet = await scrapeTweet(message.data);
       console.log("Tweet data:", tweet);
       return tweet;
