@@ -15,5 +15,6 @@ export default defineConfig({
   runner: {
     disabled: true,
   },
+  entrypointsDir: 'src/entrypoints',
   outDir: 'dist'
 });
