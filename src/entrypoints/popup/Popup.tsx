@@ -45,8 +45,8 @@ const CommentList = ({ comments }: { comments?: Comment[] }) => {
         <span className="px-2 py-0.5 text-sm bg-gray-100 rounded-full">{comments.length}</span>
       </div>
       <div className="space-y-3">
-        {comments.map((comment) => (
-          <div key={`${comment.author}-${comment.timestamp}`} 
+        {comments.map((comment, index) => (
+          <div key={`${comment.author}-${comment.timestamp}-${index}`} 
                className="p-4 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors duration-200">
             <div className="flex items-center justify-between mb-2">
               <div className="font-medium text-gray-900">{comment.author}</div>
@@ -146,19 +146,34 @@ export default function Popup() {
   };
 
   const handleExport = () => {
-    if (!tweet) return;
+    if (!tweet) {
+      setError('没有可导出的推文数据');
+      return;
+    }
 
-    const jsonString = JSON.stringify(tweet, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `tweet-${tweet.timestamp.replace(/[^0-9]/g, '')}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      const jsonString = JSON.stringify(tweet, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      
+      // 使用 chrome.downloads API
+      const url = URL.createObjectURL(blob);
+      chrome.downloads.download({
+        url: url,
+        filename: `tweet-${tweet.timestamp.replace(/[^0-9]/g, '')}.json`,
+        saveAs: true
+      }, () => {
+        URL.revokeObjectURL(url);
+        if (chrome.runtime.lastError) {
+          console.error('Download error:', chrome.runtime.lastError);
+          setError(`导出失败：${chrome.runtime.lastError.message}`);
+        } else {
+          setError(null);
+        }
+      });
+    } catch (err) {
+      setError('导出失败，请重试');
+      console.error('Export error:', err);
+    }
   };
 
   return (

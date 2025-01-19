@@ -6,7 +6,8 @@ export default defineConfig({
   manifest: {
     permissions: [
       'cookies',
-      'storage'
+      'storage',
+      'downloads'
     ],
     host_permissions: [
       'https://*.x.com/*'
