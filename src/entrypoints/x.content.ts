@@ -49,6 +49,8 @@ async function scrapeTweet(pageCount = 1) {
     timestamp: '',
     likes: 0,
     retweets: 0,
+    bookmark_count: 0,
+    reply_count: 0,
     comments: [] as Comment[],
     media: [] as Tweet['media']
   } satisfies Tweet;
@@ -195,6 +197,8 @@ async function scrapeTweet(pageCount = 1) {
       tweet.timestamp = formatTimestamp(tweetData.legacy.created_at);
       tweet.likes = tweetData.legacy.favorite_count;
       tweet.retweets = tweetData.legacy.retweet_count;
+      tweet.bookmark_count = tweetData.legacy.bookmark_count || 0;
+      tweet.reply_count = tweetData.legacy.reply_count || 0;
       
       // Parse media content for main tweet
       if (tweetData.legacy.extended_entities?.media) {

@@ -1362,3 +1362,15 @@ export interface Details2 {
 export interface ConversationDetails2 {
   conversationSection: string
 }
+
+export interface Tweet {
+  content: string;
+  author: string;
+  timestamp: string;
+  likes: number;
+  retweets: number;
+  bookmark_count: number;
+  reply_count: number;
+  comments: Comment[];
+  media: MediaContent[];
+}

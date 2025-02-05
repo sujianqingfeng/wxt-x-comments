@@ -20,6 +20,8 @@ export interface Tweet {
   media?: MediaContent[];
   likes: number;
   retweets: number;
+  bookmark_count: number;
+  reply_count: number;
   comments?: Comment[];
 }
 

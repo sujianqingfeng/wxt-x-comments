@@ -1,0 +1,3 @@
+- 项目使用wxt、react、ts、tailwindcss来构建 google extension
+- 图标库使用 lucide-react 
+- 时间格式化使用 date-fns

@@ -10,6 +10,8 @@ interface Tweet {
   media?: MediaContent[];
   likes: number;
   retweets: number;
+  bookmark_count: number;
+  reply_count: number;
   comments?: Comment[];
 }
 
@@ -19,13 +21,24 @@ const MediaRenderer = ({ mediaItems }: { mediaItems?: MediaContent[] }) => {
   if (!mediaItems?.length) return null;
   
   return (
-    <div className="grid grid-cols-2 gap-2 my-3">
+    <div className={`grid ${mediaItems.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} gap-3 my-4`}>
       {mediaItems.map((media) => (
         <div key={media.url} className="relative group overflow-hidden rounded-xl bg-gray-100">
           {media.type === 'photo' ? (
-            <img src={media.url} alt="Tweet media" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+            <img 
+              src={media.url} 
+              alt="Tweet media" 
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" 
+              loading="lazy"
+            />
           ) : media.type === 'video' ? (
-            <video src={media.url} controls className="w-full rounded-xl" poster={media.url}>
+            <video 
+              src={media.url} 
+              controls 
+              className="w-full rounded-xl" 
+              poster={media.url}
+              preload="metadata"
+            >
               <track kind="captions" />
             </video>
           ) : null}
@@ -39,25 +52,25 @@ const CommentList = ({ comments }: { comments?: Comment[] }) => {
   if (!comments?.length) return null;
 
   return (
-    <div className="mt-6 space-y-4">
-      <div className="flex items-center gap-2 text-gray-700">
-        <span className="font-medium">评论</span>
-        <span className="px-2 py-0.5 text-sm bg-gray-100 rounded-full">{comments.length}</span>
+    <div className="mt-8 space-y-4">
+      <div className="flex items-center gap-3 text-gray-700">
+        <span className="font-semibold text-lg">评论</span>
+        <span className="px-3 py-1 text-sm bg-blue-50 text-blue-600 rounded-full font-medium">{comments.length}</span>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-4">
         {comments.map((comment, index) => (
           <div key={`${comment.author}-${comment.timestamp}-${index}`} 
-               className="p-4 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors duration-200">
-            <div className="flex items-center justify-between mb-2">
+               className="p-5 rounded-xl border border-gray-200 hover:border-blue-200 hover:shadow-sm transition-all duration-300 bg-white">
+            <div className="flex items-center justify-between mb-3">
               <div className="font-medium text-gray-900">{comment.author}</div>
-              <div className="text-sm text-gray-500">{comment.timestamp}</div>
+              <div className="text-sm text-gray-500 bg-gray-50 px-2.5 py-0.5 rounded-full">{comment.timestamp}</div>
             </div>
-            <div className="text-gray-700 whitespace-pre-wrap mb-3">{comment.content}</div>
+            <div className="text-gray-700 whitespace-pre-wrap mb-3 leading-relaxed">{comment.content}</div>
             <MediaRenderer mediaItems={comment.media} />
-            <div className="flex items-center gap-1 text-sm text-gray-500">
-              <span className="inline-flex items-center gap-1">
+            <div className="flex items-center gap-2 text-sm text-gray-500 mt-3">
+              <span className="inline-flex items-center gap-1.5 hover:text-red-500 transition-colors cursor-pointer">
                 <span>❤️</span>
-                <span>{comment.likes.toLocaleString()}</span>
+                <span className="font-medium">{comment.likes.toLocaleString()}</span>
               </span>
             </div>
           </div>
@@ -69,25 +82,33 @@ const CommentList = ({ comments }: { comments?: Comment[] }) => {
 
 const TweetContent = ({ tweet }: { tweet: Tweet }) => (
   <div className="animate-fadeIn">
-    <div className="flex items-center gap-2 text-green-600 font-medium mb-4">
+    <div className="flex items-center gap-2 text-green-600 font-medium mb-6">
       <span className="text-lg">✅</span>
       <span>获取成功</span>
     </div>
-    <div className="p-4 rounded-xl border border-gray-200 bg-white shadow-sm hover:border-gray-300 transition-colors duration-200">
-      <div className="flex items-center justify-between mb-2">
-        <div className="font-medium text-gray-900">{tweet.author}</div>
-        <div className="text-sm text-gray-500">{tweet.timestamp}</div>
+    <div className="p-6 rounded-2xl border border-gray-200 bg-white shadow-sm hover:shadow-md transition-all duration-300">
+      <div className="flex items-center justify-between mb-4">
+        <div className="font-semibold text-gray-900">{tweet.author}</div>
+        <div className="text-sm text-gray-500 bg-gray-50 px-3 py-1 rounded-full">{tweet.timestamp}</div>
       </div>
-      <div className="text-gray-700 whitespace-pre-wrap mb-3">{tweet.content}</div>
+      <div className="text-gray-700 whitespace-pre-wrap mb-4 leading-relaxed">{tweet.content}</div>
       <MediaRenderer mediaItems={tweet.media} />
-      <div className="flex items-center gap-4 text-sm text-gray-600">
-        <span className="inline-flex items-center gap-1">
+      <div className="flex items-center gap-6 text-sm text-gray-600 border-t border-gray-100 mt-4 pt-4">
+        <span className="inline-flex items-center gap-2 hover:text-red-500 transition-colors cursor-pointer">
           <span>❤️</span>
-          <span>{tweet.likes.toLocaleString()}</span>
+          <span className="font-medium">{tweet.likes.toLocaleString()}</span>
         </span>
-        <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center gap-2 hover:text-blue-500 transition-colors cursor-pointer">
           <span>🔄</span>
-          <span>{tweet.retweets.toLocaleString()}</span>
+          <span className="font-medium">{tweet.retweets.toLocaleString()}</span>
+        </span>
+        <span className="inline-flex items-center gap-2 hover:text-yellow-500 transition-colors cursor-pointer">
+          <span>🔖</span>
+          <span className="font-medium">{tweet.bookmark_count.toLocaleString()}</span>
+        </span>
+        <span className="inline-flex items-center gap-2 hover:text-green-500 transition-colors cursor-pointer">
+          <span>💬</span>
+          <span className="font-medium">{tweet.reply_count.toLocaleString()}</span>
         </span>
       </div>
     </div>
@@ -177,17 +198,17 @@ export default function Popup() {
   };
 
   return (
-    <div className="w-[450px] p-5 font-sans bg-gray-50 min-h-[300px]">
-      <form onSubmit={handleScrape} className="mb-6">
-        <div className="mb-4">
-          <label htmlFor="pageCount" className="block mb-2 font-medium text-gray-700">
+    <div className="w-[500px] p-6 font-sans bg-gray-50/80 min-h-[300px]">
+      <form onSubmit={handleScrape} className="mb-8">
+        <div className="mb-5">
+          <label htmlFor="pageCount" className="block mb-2.5 font-semibold text-gray-700">
             选择获取页数
           </label>
           <select 
             id="pageCount"
             name="pageCount" 
             disabled={loading}
-            className="w-full p-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 disabled:bg-gray-100"
+            className="w-full p-3 bg-white border border-gray-300 text-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed"
           >
             <option value="1">1页 (约10条评论)</option>
             <option value="2">2页 (约20条评论)</option>
@@ -196,15 +217,16 @@ export default function Popup() {
             <option value="5">5页 (约50条评论)</option>
           </select>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           <button 
             type="submit" 
             disabled={loading}
-            className="flex-1 p-2.5 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 focus:ring-2 focus:ring-blue-300 transition-colors duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            className="flex-1 p-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 focus:ring-2 focus:ring-blue-300 transition-all duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed shadow-sm hover:shadow"
           >
             {loading ? (
-              <span className="inline-flex items-center gap-2">
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+              <span className="inline-flex items-center gap-2 justify-center">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" aria-label="Loading..." role="img">
+                  <title>Loading...</title>
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
@@ -217,14 +239,14 @@ export default function Popup() {
               <button 
                 type="button"
                 onClick={handleExport}
-                className="px-4 py-2.5 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 focus:ring-2 focus:ring-emerald-300 transition-colors duration-200"
+                className="px-5 py-3 bg-emerald-500 text-white rounded-xl font-medium hover:bg-emerald-600 focus:ring-2 focus:ring-emerald-300 transition-all duration-200 shadow-sm hover:shadow"
               >
                 导出
               </button>
               <button 
                 type="button"
                 onClick={handleClear}
-                className="px-4 py-2.5 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 focus:ring-2 focus:ring-red-300 transition-colors duration-200"
+                className="px-5 py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 focus:ring-2 focus:ring-red-300 transition-all duration-200 shadow-sm hover:shadow"
               >
                 清除
               </button>
@@ -233,9 +255,9 @@ export default function Popup() {
         </div>
       </form>
 
-      <div className="space-y-4">
+      <div className="space-y-6">
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="p-4 bg-red-50 border border-red-200 rounded-xl animate-fadeIn">
             <div className="flex items-center gap-2 text-red-600 font-medium">
               <span className="text-lg">❌</span>
               <span>{error}</span>
