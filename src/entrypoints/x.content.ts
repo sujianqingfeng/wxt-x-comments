@@ -1,31 +1,24 @@
 import { format } from 'date-fns';
-import type { Root, Instruction, Entry } from '../types';
+import type { Root, Instruction, Entry, ItemContent2 } from '../types';
 import { onMessage } from '../messages';
 import type { Tweet, Comment } from '../messages';
 
-// Additional type for promoted content
-interface PromotedMetadata {
-  advertiser_results: any;
-  disclosureType: string;
-  experimentValues: any[];
-  impressionId: string;
-  impressionString: string;
-  clickTrackingInfo: any;
-}
-
-interface ItemContent {
-  itemType: string;
-  __typename: string;
-  tweet_results?: {
-    result: any;
+interface Item {
+  item: {
+    itemContent?: ItemContent2;
+    clientEventInfo?: {
+      details?: {
+        timelinesDetails?: {
+          controllerData?: string;
+        };
+        conversationDetails?: {
+          conversationSection?: string;
+        };
+      };
+    };
   };
-  promotedMetadata?: PromotedMetadata;
 }
 
-// Use the imported Root type
-type TwitterApiResponse = Root;
-
-// Function to format timestamp
 function formatTimestamp(timestamp: string): string {
   try {
     const date = new Date(timestamp);
@@ -60,7 +53,7 @@ async function scrapeTweet(pageCount = 1) {
 
   try {
     // Function to make API request with cursor
-    async function fetchTweetData(cursor?: string): Promise<TwitterApiResponse> {
+    async function fetchTweetData(cursor?: string): Promise<Root> {
       // Prepare GraphQL query parameters
       const variables = {
         "focalTweetId": tweetId,
@@ -133,8 +126,6 @@ async function scrapeTweet(pageCount = 1) {
       xhr.setRequestHeader('x-twitter-active-user', 'yes');
       xhr.setRequestHeader('x-twitter-auth-type', 'OAuth2Session');
       xhr.setRequestHeader('x-twitter-client-language', 'en');
-      xhr.setRequestHeader('Referer', 'https://x.com/');
-      xhr.setRequestHeader('Origin', 'https://x.com');
       xhr.withCredentials = true;
 
       return new Promise((resolve, reject) => {
@@ -216,18 +207,37 @@ async function scrapeTweet(pageCount = 1) {
       const replies = instruction.entries
         .filter((entry: Entry) => {
           if (!entry.content) return false;
+
+          // Skip cursor entries
+          if (entry.content.itemContent?.itemType === "TimelineTimelineCursor") return false;
+
+          // Skip non-conversation entries
+          const conversationSection = entry.content?.clientEventInfo?.details?.conversationDetails?.conversationSection;
+          if (conversationSection && !['tweet', 'reply', 'HighQuality'].includes(conversationSection)) return false;
           
           const items = entry.content.items || [{ item: { itemContent: entry.content.itemContent } }];
           
           return items.some(item => {
-            const itemContent = item.item?.itemContent as ItemContent;
-            if (itemContent?.promotedMetadata) return false;
-            if (!itemContent?.tweet_results?.result) return false;
+            const itemContent = item.item?.itemContent as ItemContent2;
+            if (!itemContent) return false;
+
+            // Skip ads and recommendations
+            if (itemContent.promotedMetadata) return false;
+
+            // Check if it's a tweet result
+            if (!itemContent.tweet_results?.result) return false;
             
             const tweetResults = itemContent.tweet_results.result;
-            return tweetResults.rest_id !== tweetId && 
-                   tweetResults.legacy && 
-                   tweetResults.core?.user_results?.result?.legacy;
+
+            // Skip tombstoned or unavailable tweets
+            if (tweetResults.__typename !== "Tweet") return false;
+
+            // Skip the main tweet and check for required data
+            const isValidTweet = tweetResults.rest_id !== tweetId && 
+                               tweetResults.legacy && 
+                               tweetResults.core?.user_results?.result?.legacy;
+            
+            return isValidTweet;
           });
         });
 
@@ -235,15 +245,25 @@ async function scrapeTweet(pageCount = 1) {
         const items = entry.content?.items || [{ item: { itemContent: entry.content?.itemContent } }];
         return items
           .filter(item => {
-            const itemContent = item.item?.itemContent as ItemContent;
-            if (itemContent?.promotedMetadata) return false;
-            return itemContent?.tweet_results?.result;
+            const itemContent = item.item?.itemContent as ItemContent2;
+            if (!itemContent) return false;
+
+            // Skip ads and recommendations
+            if (itemContent.promotedMetadata) return false;
+
+            // Only include valid tweets
+            const tweetResults = itemContent.tweet_results?.result;
+            return tweetResults && 
+                   tweetResults.__typename === "Tweet" && 
+                   tweetResults.legacy && 
+                   tweetResults.core?.user_results?.result?.legacy;
           })
           .map(item => {
             const replyData = item.item?.itemContent?.tweet_results?.result;
             const replyUserData = replyData?.core?.user_results?.result;
             
             const comment: Comment = {
+              id: replyData?.rest_id || '',
               content: cleanTweetContent(replyData?.legacy?.full_text || '', true, userData?.legacy?.screen_name),
               author: replyUserData?.legacy ? `${replyUserData.legacy.name} @${replyUserData.legacy.screen_name}` : '',
               timestamp: formatTimestamp(replyData?.legacy?.created_at || ''),
@@ -267,12 +287,14 @@ async function scrapeTweet(pageCount = 1) {
     const firstPageReplies = parseReplies(mainInstruction);
     tweet.comments = firstPageReplies;
 
+    // Track unique comment IDs
+    const seenCommentIds = new Set(firstPageReplies.map(comment => comment.id));
+
     // Fetch additional pages if requested
     let currentCursor = null;
     let currentPage = 1;
 
     while (currentPage < pageCount) {
-      // Find cursor for next page
       const cursorEntry = mainInstruction.entries?.find((entry: Entry) => {
         if (!entry.content?.itemContent) return false;
         return (
@@ -284,10 +306,7 @@ async function scrapeTweet(pageCount = 1) {
       
       currentCursor = cursorEntry?.content?.itemContent?.value;
       
-      if (!currentCursor) {
-        console.log("No more pages available");
-        break;
-      }
+      if (!currentCursor) break;
 
       // Wait before making the next request
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -299,14 +318,19 @@ async function scrapeTweet(pageCount = 1) {
       
       if (nextPageInstruction) {
         const nextPageReplies = parseReplies(nextPageInstruction);
-        tweet.comments = [...tweet.comments, ...nextPageReplies];
+        // Filter out duplicates before adding to tweet.comments
+        const uniqueNewReplies = nextPageReplies.filter(comment => {
+          if (seenCommentIds.has(comment.id)) return false;
+          seenCommentIds.add(comment.id);
+          return true;
+        });
+        tweet.comments = [...tweet.comments, ...uniqueNewReplies];
       }
 
       currentPage++;
     }
 
-    console.log("Parsed tweet:", tweet);
-    console.log(`Total replies found: ${tweet.comments.length} from ${currentPage} pages`);
+    console.log(`Successfully fetched ${tweet.comments.length} comments from ${currentPage} pages`);
 
   } catch (error) {
     console.error('Error fetching tweet data:', error);
@@ -319,9 +343,7 @@ export default defineContentScript({
   matches: ['*://*.x.com/*'],
   async main() {
     onMessage('scrapeTweet', async (message) => {
-      console.log("🚀 ~ onMessage ~ message:", message)
       const tweet = await scrapeTweet(message.data);
-      console.log("Tweet data:", tweet);
       return tweet;
     });
   }

@@ -6,6 +6,7 @@ export interface MediaContent {
 }
 
 export interface Comment {
+  id: string;
   author: string;
   timestamp: string;
   content: string;
