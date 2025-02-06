@@ -206,62 +206,108 @@ async function scrapeTweet(pageCount = 1) {
       
       const replies = instruction.entries
         .filter((entry: Entry) => {
-          if (!entry.content?.itemContent) return false;
-
           // Skip cursor entries
-          if (entry.content.itemContent.itemType === "TimelineTimelineCursor") return false;
+          if (entry.content?.itemContent?.itemType === "TimelineTimelineCursor") return false;
 
-          // Skip non-conversation entries
-          const conversationSection = entry.content?.clientEventInfo?.details?.conversationDetails?.conversationSection;
-          if (conversationSection && !['tweet', 'reply', 'HighQuality'].includes(conversationSection)) return false;
-          
-          const itemContent = entry.content.itemContent as ItemContent2;
-          
-          // Skip ads and invalid tweets
-          if ('promotedMetadata' in itemContent || !itemContent.tweet_results?.result) return false;
-          
-          const tweetResults = itemContent.tweet_results.result;
-          
-          // Skip invalid tweets and main tweet
-          return tweetResults.__typename === "Tweet" && 
-                 tweetResults.rest_id !== tweetId && 
-                 tweetResults.legacy && 
-                 tweetResults.core?.user_results?.result?.legacy;
-        });
+          // Skip main tweet
+          if (entry.content?.itemContent?.__typename === "TimelineTweet") return false;
 
-      return replies.map((entry: Entry) => {
-        const itemContent = entry.content?.itemContent as ItemContent2;
-        if (!itemContent?.tweet_results?.result) {
-          return {
-            id: '',
-            content: '',
-            author: '',
-            timestamp: '',
-            likes: 0
-          };
-        }
+          // For entries with undefined type, check if they have tweet data
+          if (!entry.content?.itemContent?.__typename && entry.content) {
+            const content = entry.content as unknown as { tweet_results?: { result: any }, __typename?: string };
+            // Check if it's a reply or conversation module
+            return !!(content.tweet_results?.result || content.__typename === "TimelineTimelineModule");
+          }
 
-        const tweetResults = itemContent.tweet_results.result;
-        const userData = tweetResults.core?.user_results?.result;
-        
-        const comment: Comment = {
-          id: tweetResults.rest_id || '',
-          content: cleanTweetContent(tweetResults.legacy?.full_text || '', true, userData?.legacy?.screen_name),
-          author: userData?.legacy ? `${userData.legacy.name} @${userData.legacy.screen_name}` : '',
-          timestamp: formatTimestamp(tweetResults.legacy?.created_at || ''),
-          likes: tweetResults.legacy?.favorite_count || 0
-        };
+          // Check for tweet content in itemContent or conversation module
+          return !!(
+            entry.content?.itemContent?.tweet_results?.result ||
+            entry.content?.itemContent?.__typename === "TimelineTimelineModule"
+          );
+        })
+        .flatMap((entry: Entry) => {
+          // Handle direct tweet results in content (for undefined type entries)
+          if (entry.content) {
+            const content = entry.content as unknown as { tweet_results?: { result: any } };
+            if (content.tweet_results?.result) {
+              const tweet = content.tweet_results.result;
+              if (tweet.__typename !== "Tweet" || !tweet.legacy || !tweet.core?.user_results?.result?.legacy) {
+                return [];
+              }
+              const userData = tweet.core.user_results.result;
 
-        // Parse media content for comments
-        if (tweetResults.legacy?.extended_entities?.media) {
-          comment.media = tweetResults.legacy.extended_entities.media.map(media => ({
-            type: media.type === 'photo' ? 'photo' : 'video',
-            url: media.type === 'photo' ? media.media_url_https : media.video_info?.variants?.[0]?.url || ''
-          }));
-        }
+              const media = tweet.legacy.extended_entities?.media?.map((mediaItem: any) => ({
+                type: mediaItem.type === 'photo' ? ('photo' as const) : ('video' as const),
+                url: mediaItem.type === 'photo' ? mediaItem.media_url_https : mediaItem.video_info?.variants?.[0]?.url || ''
+              }));
 
-        return comment;
-      }).filter(comment => comment.id !== ''); // Filter out invalid comments
+              return [{
+                id: tweet.rest_id || '',
+                content: cleanTweetContent(tweet.legacy.full_text || '', true, userData.legacy.screen_name),
+                author: `${userData.legacy.name} @${userData.legacy.screen_name}`,
+                timestamp: formatTimestamp(tweet.legacy.created_at || ''),
+                likes: tweet.legacy.favorite_count || 0,
+                ...(media && { media })
+              }];
+            }
+          }
+
+          // If it's a direct tweet result in itemContent
+          if (entry.content?.itemContent?.tweet_results?.result) {
+            const tweet = entry.content.itemContent.tweet_results.result;
+            if (tweet.__typename !== "Tweet" || !tweet.legacy || !tweet.core?.user_results?.result?.legacy) {
+              return [];
+            }
+            const userData = tweet.core.user_results.result;
+
+            const media = tweet.legacy.extended_entities?.media?.map((mediaItem: any) => ({
+              type: mediaItem.type === 'photo' ? ('photo' as const) : ('video' as const),
+              url: mediaItem.type === 'photo' ? mediaItem.media_url_https : mediaItem.video_info?.variants?.[0]?.url || ''
+            }));
+
+            return [{
+              id: tweet.rest_id || '',
+              content: cleanTweetContent(tweet.legacy.full_text || '', true, userData.legacy.screen_name),
+              author: `${userData.legacy.name} @${userData.legacy.screen_name}`,
+              timestamp: formatTimestamp(tweet.legacy.created_at || ''),
+              likes: tweet.legacy.favorite_count || 0,
+              ...(media && { media })
+            }];
+          }
+
+          // Handle timeline module items
+          const items = entry.content?.items || [];
+          return items
+            .filter(item => {
+              const tweet = item.item?.itemContent?.tweet_results?.result;
+              return tweet?.__typename === "Tweet" && 
+                     tweet.legacy && 
+                     tweet.core?.user_results?.result?.legacy;
+            })
+            .map(item => {
+              const tweet = item.item?.itemContent?.tweet_results?.result;
+              if (!tweet?.legacy || !tweet.core?.user_results?.result?.legacy) return null;
+              
+              const userData = tweet.core.user_results.result;
+              const media = tweet.legacy.extended_entities?.media?.map((mediaItem: any) => ({
+                type: mediaItem.type === 'photo' ? ('photo' as const) : ('video' as const),
+                url: mediaItem.type === 'photo' ? mediaItem.media_url_https : mediaItem.video_info?.variants?.[0]?.url || ''
+              }));
+              
+              return {
+                id: tweet.rest_id || '',
+                content: cleanTweetContent(tweet.legacy.full_text || '', true, userData.legacy.screen_name),
+                author: `${userData.legacy.name} @${userData.legacy.screen_name}`,
+                timestamp: formatTimestamp(tweet.legacy.created_at || ''),
+                likes: tweet.legacy.favorite_count || 0,
+                ...(media && { media })
+              };
+            })
+            .filter((comment): comment is Comment => comment !== null);
+        })
+        .filter(comment => comment.id !== '');
+
+      return replies;
     }
 
     // Get first page replies
