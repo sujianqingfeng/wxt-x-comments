@@ -215,6 +215,11 @@ export default function Popup() {
             <option value="3">3页 (约30条评论)</option>
             <option value="4">4页 (约40条评论)</option>
             <option value="5">5页 (约50条评论)</option>
+            <option value="6">6页 (约60条评论)</option>
+            <option value="7">7页 (约70条评论)</option>
+            <option value="8">8页 (约80条评论)</option>
+            <option value="9">9页 (约90条评论)</option>
+            <option value="10">10页 (约100条评论)</option>
           </select>
         </div>
         <div className="flex gap-3">

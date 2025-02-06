@@ -148,7 +148,7 @@ async function scrapeTweet(pageCount = 1) {
     
     // Parse main tweet data from first page
     const instructions = firstPageResponse.data.threaded_conversation_with_injections_v2.instructions;
-    const mainInstruction = instructions.find((instruction: Instruction) => instruction.type === "TimelineAddEntries");
+    let mainInstruction = instructions.find((instruction: Instruction) => instruction.type === "TimelineAddEntries");
     
     if (!mainInstruction?.entries?.length) {
       throw new Error('No tweet data found');
@@ -206,81 +206,62 @@ async function scrapeTweet(pageCount = 1) {
       
       const replies = instruction.entries
         .filter((entry: Entry) => {
-          if (!entry.content) return false;
+          if (!entry.content?.itemContent) return false;
 
           // Skip cursor entries
-          if (entry.content.itemContent?.itemType === "TimelineTimelineCursor") return false;
+          if (entry.content.itemContent.itemType === "TimelineTimelineCursor") return false;
 
           // Skip non-conversation entries
           const conversationSection = entry.content?.clientEventInfo?.details?.conversationDetails?.conversationSection;
           if (conversationSection && !['tweet', 'reply', 'HighQuality'].includes(conversationSection)) return false;
           
-          const items = entry.content.items || [{ item: { itemContent: entry.content.itemContent } }];
+          const itemContent = entry.content.itemContent as ItemContent2;
           
-          return items.some(item => {
-            const itemContent = item.item?.itemContent as ItemContent2;
-            if (!itemContent) return false;
-
-            // Skip ads and recommendations
-            if (itemContent.promotedMetadata) return false;
-
-            // Check if it's a tweet result
-            if (!itemContent.tweet_results?.result) return false;
-            
-            const tweetResults = itemContent.tweet_results.result;
-
-            // Skip tombstoned or unavailable tweets
-            if (tweetResults.__typename !== "Tweet") return false;
-
-            // Skip the main tweet and check for required data
-            const isValidTweet = tweetResults.rest_id !== tweetId && 
-                               tweetResults.legacy && 
-                               tweetResults.core?.user_results?.result?.legacy;
-            
-            return isValidTweet;
-          });
+          // Skip ads and invalid tweets
+          if ('promotedMetadata' in itemContent || !itemContent.tweet_results?.result) return false;
+          
+          const tweetResults = itemContent.tweet_results.result;
+          
+          // Skip invalid tweets and main tweet
+          return tweetResults.__typename === "Tweet" && 
+                 tweetResults.rest_id !== tweetId && 
+                 tweetResults.legacy && 
+                 tweetResults.core?.user_results?.result?.legacy;
         });
 
-      return replies.flatMap((entry: Entry) => {
-        const items = entry.content?.items || [{ item: { itemContent: entry.content?.itemContent } }];
-        return items
-          .filter(item => {
-            const itemContent = item.item?.itemContent as ItemContent2;
-            if (!itemContent) return false;
+      return replies.map((entry: Entry) => {
+        const itemContent = entry.content?.itemContent as ItemContent2;
+        if (!itemContent?.tweet_results?.result) {
+          return {
+            id: '',
+            content: '',
+            author: '',
+            timestamp: '',
+            likes: 0
+          };
+        }
 
-            // Skip ads and recommendations
-            if (itemContent.promotedMetadata) return false;
+        const tweetResults = itemContent.tweet_results.result;
+        const userData = tweetResults.core?.user_results?.result;
+        
+        const comment: Comment = {
+          id: tweetResults.rest_id || '',
+          content: cleanTweetContent(tweetResults.legacy?.full_text || '', true, userData?.legacy?.screen_name),
+          author: userData?.legacy ? `${userData.legacy.name} @${userData.legacy.screen_name}` : '',
+          timestamp: formatTimestamp(tweetResults.legacy?.created_at || ''),
+          likes: tweetResults.legacy?.favorite_count || 0
+        };
 
-            // Only include valid tweets
-            const tweetResults = itemContent.tweet_results?.result;
-            return tweetResults && 
-                   tweetResults.__typename === "Tweet" && 
-                   tweetResults.legacy && 
-                   tweetResults.core?.user_results?.result?.legacy;
-          })
-          .map(item => {
-            const replyData = item.item?.itemContent?.tweet_results?.result;
-            const replyUserData = replyData?.core?.user_results?.result;
-            
-            const comment: Comment = {
-              id: replyData?.rest_id || '',
-              content: cleanTweetContent(replyData?.legacy?.full_text || '', true, userData?.legacy?.screen_name),
-              author: replyUserData?.legacy ? `${replyUserData.legacy.name} @${replyUserData.legacy.screen_name}` : '',
-              timestamp: formatTimestamp(replyData?.legacy?.created_at || ''),
-              likes: replyData?.legacy?.favorite_count || 0
-            };
+        // Parse media content for comments
+        if (tweetResults.legacy?.extended_entities?.media) {
+          comment.media = tweetResults.legacy.extended_entities.media.map(media => ({
+            type: media.type === 'photo' ? 'photo' : 'video',
+            url: media.type === 'photo' ? media.media_url_https : media.video_info?.variants?.[0]?.url || ''
+          }));
+        }
 
-            // Parse media content for comments
-            if (replyData?.legacy?.extended_entities?.media) {
-              comment.media = replyData.legacy.extended_entities.media.map(media => ({
-                type: media.type === 'photo' ? 'photo' : 'video',
-                url: media.type === 'photo' ? media.media_url_https : media.video_info?.variants?.[0]?.url || ''
-              }));
-            }
-
-            return comment;
-          });
-      });
+        return comment;
+      }).filter(comment => comment.id !== ''); // Filter out invalid comments
     }
 
     // Get first page replies
@@ -295,17 +276,13 @@ async function scrapeTweet(pageCount = 1) {
     let currentPage = 1;
 
     while (currentPage < pageCount) {
-      const cursorEntry = mainInstruction.entries?.find((entry: Entry) => {
-        if (!entry.content?.itemContent) return false;
-        return (
-          entry.content.itemContent.itemType === "TimelineTimelineCursor" &&
-          entry.content.itemContent.__typename === "TimelineTimelineCursor" &&
-          entry.content.itemContent.cursorType === "Bottom"
-        );
-      });
+      const cursorEntry = mainInstruction.entries?.find((entry: Entry) => 
+        entry.content?.itemContent?.itemType === "TimelineTimelineCursor" &&
+        entry.content.itemContent.__typename === "TimelineTimelineCursor" &&
+        entry.content.itemContent.cursorType === "Bottom"
+      );
       
       currentCursor = cursorEntry?.content?.itemContent?.value;
-      
       if (!currentCursor) break;
 
       // Wait before making the next request
@@ -318,6 +295,7 @@ async function scrapeTweet(pageCount = 1) {
       
       if (nextPageInstruction) {
         const nextPageReplies = parseReplies(nextPageInstruction);
+        
         // Filter out duplicates before adding to tweet.comments
         const uniqueNewReplies = nextPageReplies.filter(comment => {
           if (seenCommentIds.has(comment.id)) return false;
@@ -325,6 +303,11 @@ async function scrapeTweet(pageCount = 1) {
           return true;
         });
         tweet.comments = [...tweet.comments, ...uniqueNewReplies];
+
+        // Update mainInstruction for next iteration to get new cursor
+        mainInstruction = nextPageInstruction;
+      } else {
+        break;
       }
 
       currentPage++;
