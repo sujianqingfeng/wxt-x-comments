@@ -1,5 +1,3 @@
-import { defineExtensionMessaging } from '@webext-core/messaging';
-
 export interface MediaContent {
   type: 'photo' | 'video';
   url: string;
@@ -24,6 +22,7 @@ export interface Tweet {
   bookmark_count: number;
   reply_count: number;
   comments?: Comment[];
+  directContent?: string;
 }
 
 export type MessageType = 'scrapeTweet';

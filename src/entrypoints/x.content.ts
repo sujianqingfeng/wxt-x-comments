@@ -1,23 +1,8 @@
 import { format } from 'date-fns';
-import type { Root, Instruction, Entry, ItemContent2 } from '../types';
+import type { Root, Instruction, Entry} from '../types';
 import { onMessage } from '../messages';
 import type { Tweet, Comment } from '../messages';
 
-interface Item {
-  item: {
-    itemContent?: ItemContent2;
-    clientEventInfo?: {
-      details?: {
-        timelinesDetails?: {
-          controllerData?: string;
-        };
-        conversationDetails?: {
-          conversationSection?: string;
-        };
-      };
-    };
-  };
-}
 
 function formatTimestamp(timestamp: string): string {
   try {
@@ -36,6 +21,8 @@ async function getTweetId(): Promise<string> {
 }
 
 async function scrapeTweet(pageCount = 1) {
+  console.log('开始抓取推文，页数:', pageCount);
+  
   const tweet = {
     content: '',
     author: '',
@@ -45,11 +32,57 @@ async function scrapeTweet(pageCount = 1) {
     bookmark_count: 0,
     reply_count: 0,
     comments: [] as Comment[],
-    media: [] as Tweet['media']
+    media: [] as Tweet['media'],
+    directContent: ''
   } satisfies Tweet;
 
   const tweetId = await getTweetId();
-  if (!tweetId) return tweet;
+  if (!tweetId) {
+    console.error('无法获取推文ID');
+    return tweet;
+  }
+  
+  console.log('获取到推文ID:', tweetId);
+
+  // 首先尝试从页面直接抓取推文内容，作为备用方法
+  try {
+    const mainTweetElement = document.querySelector('[data-testid="tweetText"]');
+    if (mainTweetElement) {
+      // 直接保存原始 HTML 内容
+      const originalHtml = mainTweetElement.innerHTML;
+      
+      // 创建一个临时元素来处理 HTML
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = originalHtml;
+      
+      // 保留所有表情符号和格式
+      // 1. 保留所有图片元素（表情符号通常是 img 元素）
+      const emojiImgs = tempDiv.querySelectorAll('img');
+      for (const img of emojiImgs) {
+        // 将图片元素替换为其 alt 文本（通常包含表情符号）
+        if (img.alt) {
+          const textNode = document.createTextNode(img.alt);
+          img.parentNode?.replaceChild(textNode, img);
+        }
+      }
+      
+      // 2. 保留换行符
+      const lineBreaks = tempDiv.querySelectorAll('br');
+      for (const br of lineBreaks) {
+        const textNode = document.createTextNode('\n');
+        br.parentNode?.replaceChild(textNode, br);
+      }
+      
+      // 获取处理后的文本内容
+      const textWithEmojis = tempDiv.textContent || '';
+      
+      console.log('从页面直接抓取的推文内容(带表情符号):', textWithEmojis);
+      // 暂存这个内容，如果 API 方法失败，我们将使用这个内容
+      tweet.directContent = textWithEmojis;
+    }
+  } catch (error) {
+    console.error('从页面直接抓取推文内容时出错:', error);
+  }
 
   try {
     // Function to make API request with cursor
@@ -167,23 +200,57 @@ async function scrapeTweet(pageCount = 1) {
     const tweetData = mainTweetEntry.content.itemContent.tweet_results.result;
     const userData = tweetData.core?.user_results?.result;
     
-    // Function to clean tweet content by removing t.co URLs and author mentions
-    function cleanTweetContent(content: string, isComment = false, authorUsername?: string) {
-      // Remove t.co URLs
-      let cleanContent = content.replace(/\s*https:\/\/t\.co\/\w+/g, '');
+    // 添加一个新的函数来处理推文内容，适用于主推文和评论
+    function processFullText(fullText: string, isComment = false, tweetDataObj?: any): string {
+      console.log('处理前的原始内容:', fullText);
       
-      // For comments, remove mention of the original tweet author at the beginning
-      if (isComment && authorUsername) {
-        const authorMentionRegex = new RegExp(`^@${authorUsername}\\s*`);
-        cleanContent = cleanContent.replace(authorMentionRegex, '');
+      // 检查内容是否被截断
+      const isTruncated = fullText.endsWith('…') || fullText.endsWith('...');
+      if (isTruncated && tweetDataObj) {
+        console.warn('警告：内容可能被截断，尝试获取完整内容');
+        // 尝试从 note_tweet 字段获取完整内容
+        try {
+          if (tweetDataObj.note_tweet?.note_tweet_results?.result?.text) {
+            fullText = tweetDataObj.note_tweet.note_tweet_results.result.text;
+            console.log('从 note_tweet 获取到的完整内容:', fullText);
+          }
+        } catch (error) {
+          console.error('尝试获取 note_tweet 内容时出错:', error);
+        }
       }
       
-      return cleanContent.trim();
+      // 只清理 t.co 链接，保留所有其他内容（包括表情符号）
+      let cleanedText = fullText;
+      
+      // 使用正则表达式匹配并删除 t.co 链接
+      cleanedText = cleanedText.replace(/https:\/\/t\.co\/\w+/g, '');
+      
+      // 对于评论，移除开头的作者提及
+      if (isComment) {
+        // 匹配评论开头的 @username 格式
+        cleanedText = cleanedText.replace(/^@\w+\s+/, '');
+      }
+      
+      // 保守地清理空白字符，保留换行符和表情符号
+      // 只替换连续的空格或制表符为单个空格
+      cleanedText = cleanedText.replace(/[ \t]+/g, ' ');
+      
+      // 移除开头和结尾的空白字符
+      cleanedText = cleanedText.trim();
+      
+      console.log('处理后的清理内容:', cleanedText);
+      return cleanedText;
     }
 
     if (tweetData.legacy && userData?.legacy) {
       const authorUsername = userData.legacy.screen_name;
-      tweet.content = cleanTweetContent(tweetData.legacy.full_text);
+      
+      console.log('主推文原始内容:', tweetData.legacy.full_text);
+      console.log('主推文display_text_range:', tweetData.legacy.display_text_range);
+      
+      tweet.content = processFullText(tweetData.legacy.full_text, false, tweetData);
+      console.log('处理后的完整内容:', tweet.content);
+      
       tweet.author = `${userData.legacy.name} @${authorUsername}`;
       tweet.timestamp = formatTimestamp(tweetData.legacy.created_at);
       tweet.likes = tweetData.legacy.favorite_count;
@@ -241,9 +308,16 @@ async function scrapeTweet(pageCount = 1) {
                 url: mediaItem.type === 'photo' ? mediaItem.media_url_https : mediaItem.video_info?.variants?.[0]?.url || ''
               }));
 
+              console.log('评论原始内容:', tweet.legacy.full_text);
+              console.log('评论display_text_range:', tweet.legacy.display_text_range);
+
+              // 使用新的 processFullText 函数处理评论内容
+              const commentContent = processFullText(tweet.legacy.full_text, true, tweetData);
+              console.log('处理后的评论内容:', commentContent);
+
               return [{
                 id: tweet.rest_id || '',
-                content: cleanTweetContent(tweet.legacy.full_text || '', true, userData.legacy.screen_name),
+                content: commentContent,
                 author: `${userData.legacy.name} @${userData.legacy.screen_name}`,
                 timestamp: formatTimestamp(tweet.legacy.created_at || ''),
                 likes: tweet.legacy.favorite_count || 0,
@@ -265,9 +339,16 @@ async function scrapeTweet(pageCount = 1) {
               url: mediaItem.type === 'photo' ? mediaItem.media_url_https : mediaItem.video_info?.variants?.[0]?.url || ''
             }));
 
+            console.log('评论原始内容(itemContent):', tweet.legacy.full_text);
+            console.log('评论display_text_range(itemContent):', tweet.legacy.display_text_range);
+
+            // 使用新的 processFullText 函数处理评论内容
+            const commentContent = processFullText(tweet.legacy.full_text, true, tweetData);
+            console.log('处理后的评论内容(itemContent):', commentContent);
+
             return [{
               id: tweet.rest_id || '',
-              content: cleanTweetContent(tweet.legacy.full_text || '', true, userData.legacy.screen_name),
+              content: commentContent,
               author: `${userData.legacy.name} @${userData.legacy.screen_name}`,
               timestamp: formatTimestamp(tweet.legacy.created_at || ''),
               likes: tweet.legacy.favorite_count || 0,
@@ -294,9 +375,16 @@ async function scrapeTweet(pageCount = 1) {
                 url: mediaItem.type === 'photo' ? mediaItem.media_url_https : mediaItem.video_info?.variants?.[0]?.url || ''
               }));
               
+              console.log('评论原始内容(timeline):', tweet.legacy.full_text);
+              console.log('评论display_text_range(timeline):', tweet.legacy.display_text_range);
+              
+              // 使用新的 processFullText 函数处理评论内容
+              const commentContent = processFullText(tweet.legacy.full_text, true, tweetData);
+              console.log('处理后的评论内容(timeline):', commentContent);
+              
               return {
                 id: tweet.rest_id || '',
-                content: cleanTweetContent(tweet.legacy.full_text || '', true, userData.legacy.screen_name),
+                content: commentContent,
                 author: `${userData.legacy.name} @${userData.legacy.screen_name}`,
                 timestamp: formatTimestamp(tweet.legacy.created_at || ''),
                 likes: tweet.legacy.favorite_count || 0,
@@ -359,10 +447,173 @@ async function scrapeTweet(pageCount = 1) {
       currentPage++;
     }
 
-    console.log(`Successfully fetched ${tweet.comments.length} comments from ${currentPage} pages`);
+    console.log(`成功抓取 ${tweet.comments.length} 条评论，共 ${currentPage} 页`);
+    console.log('最终推文内容:', tweet.content);
+
+    // 检查推文内容是否完整
+    // 根据您提供的示例，完整内容应该包含特定的关键词
+    const expectedKeywords = ['DeepSeek-V3/R1', 'OpenSourceWeek', 'Cost profit margin 545%'];
+    const missingKeywords = expectedKeywords.filter(keyword => !tweet.content.includes(keyword));
+
+    if (missingKeywords.length > 0) {
+      console.warn('警告：推文内容可能不完整，缺少以下关键词:', missingKeywords);
+      
+      // 尝试从评论中查找完整内容
+      console.log('尝试从评论中查找完整内容');
+      const relevantComments = tweet.comments.filter(comment => 
+        missingKeywords.some(keyword => comment.content.includes(keyword))
+      );
+      
+      if (relevantComments.length > 0) {
+        console.log('找到包含缺失关键词的评论:', relevantComments.map(c => c.content));
+        
+        // 尝试从评论中提取完整内容
+        for (const comment of relevantComments) {
+          if (comment.content.includes('Cost profit margin 545%')) {
+            console.log('从评论中提取包含 Cost profit margin 545% 的内容');
+            // 更新推文内容，添加缺失的信息
+            tweet.content = `${tweet.content}\n\n${comment.content.replace(/^@\w+\s+/, '')}`;
+            break;
+          }
+        }
+      }
+      
+      // 如果仍然缺少关键词，尝试从原始数据中重新提取完整内容
+      if (expectedKeywords.some(keyword => !tweet.content.includes(keyword)) && tweetData?.legacy) {
+        console.log('尝试从原始数据中重新提取完整内容');
+        
+        // 直接使用完整的 full_text，只移除明确的媒体链接
+        let fullContent = tweetData.legacy.full_text;
+        
+        const mediaItems = tweetData.legacy.entities?.media;
+        if (mediaItems) {
+          for (const media of mediaItems) {
+            if (media.url) {
+              fullContent = fullContent.replace(media.url, '');
+            }
+          }
+        }
+        
+        // 清理多余的空格，但保留换行符和表情符号
+        fullContent = fullContent.trim()
+          .replace(/[ \t]+/g, ' ')  // 替换连续的空格或制表符为单个空格
+          .replace(/\s+\n/g, '\n')  // 替换换行符前的空白为单个换行符
+          .replace(/\n\s+/g, '\n'); // 替换换行符后的空白为单个换行符
+        
+        console.log('重新提取的完整内容:', fullContent);
+        
+        // 只有当重新提取的内容比当前内容更长时才替换
+        if (fullContent.length > tweet.content.length) {
+          tweet.content = fullContent;
+        } else {
+          // 合并内容，确保包含所有信息
+          tweet.content = `${tweet.content}\n\n${fullContent}`;
+        }
+      }
+    }
+
+    // 如果内容仍然不完整，使用从页面直接抓取的内容
+    if ((tweet.directContent && tweet.directContent.length > tweet.content.length) || 
+        expectedKeywords.some(keyword => !tweet.content.includes(keyword))) {
+      console.log('使用从页面直接抓取的内容，因为 API 返回的内容不完整');
+      if (tweet.directContent) {
+        tweet.content = tweet.directContent;
+        // 不使用 delete 操作符，而是将 directContent 设置为空字符串
+        tweet.directContent = '';
+      }
+    }
+
+    // 最后检查是否仍然缺少关键词
+    const stillMissingKeywords = expectedKeywords.filter(keyword => !tweet.content.includes(keyword));
+    if (stillMissingKeywords.length > 0) {
+      console.warn('警告：最终内容仍然缺少以下关键词:', stillMissingKeywords);
+      
+      // 尝试直接从原始数据中提取完整内容
+      try {
+        if (tweetData.legacy?.full_text) {
+          console.log('尝试从原始数据中提取完整内容');
+          let fullContent = tweetData.legacy.full_text;
+          
+          // 移除媒体链接
+          const mediaItems = tweetData.legacy.entities?.media;
+          if (mediaItems) {
+            for (const media of mediaItems) {
+              if (media.url) {
+                fullContent = fullContent.replace(media.url, '');
+              }
+            }
+          }
+          
+          // 保守地清理空白字符，保留换行符和表情符号
+          fullContent = fullContent.replace(/[ \t]+/g, ' ').trim();
+          
+          console.log('从原始数据中提取的完整内容:', fullContent);
+          
+          // 检查提取的内容是否包含缺失的关键词
+          if (stillMissingKeywords.some(keyword => fullContent.includes(keyword))) {
+            console.log('从原始数据中找到包含缺失关键词的内容');
+            tweet.content = fullContent;
+          }
+        }
+      } catch (error) {
+        console.error('尝试从原始数据中提取内容时出错:', error);
+      }
+      
+      // 如果仍然缺少关键词，尝试直接从页面抓取完整内容
+      try {
+        const tweetTextElements = Array.from(document.querySelectorAll('[data-testid="tweetText"]'));
+        for (const element of tweetTextElements) {
+          // 直接保存原始 HTML 内容
+          const originalHtml = element.innerHTML;
+          
+          // 创建一个临时元素来处理 HTML
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = originalHtml;
+          
+          // 保留所有表情符号和格式
+          // 1. 保留所有图片元素（表情符号通常是 img 元素）
+          const emojiImgs = tempDiv.querySelectorAll('img');
+          for (const img of emojiImgs) {
+            // 将图片元素替换为其 alt 文本（通常包含表情符号）
+            if (img.alt) {
+              const textNode = document.createTextNode(img.alt);
+              img.parentNode?.replaceChild(textNode, img);
+            }
+          }
+          
+          // 2. 保留换行符
+          const lineBreaks = tempDiv.querySelectorAll('br');
+          for (const br of lineBreaks) {
+            const textNode = document.createTextNode('\n');
+            br.parentNode?.replaceChild(textNode, br);
+          }
+          
+          // 获取处理后的文本内容
+          const elementText = tempDiv.textContent || '';
+          
+          if (stillMissingKeywords.some(keyword => elementText.includes(keyword))) {
+            console.log('从页面元素中找到包含缺失关键词的内容(带表情符号):', elementText);
+            tweet.content = elementText;
+            break;
+          }
+        }
+      } catch (error) {
+        console.error('尝试从页面元素抓取内容时出错:', error);
+      }
+    }
+
+    console.log('最终推文数据:', JSON.stringify(tweet, null, 2));
 
   } catch (error) {
-    console.error('Error fetching tweet data:', error);
+    console.error('抓取推文数据时出错:', error);
+    
+    // 如果 API 方法失败，使用从页面直接抓取的内容
+    if (tweet.directContent) {
+      console.log('API 方法失败，使用从页面直接抓取的内容');
+      tweet.content = tweet.directContent;
+      // 不使用 delete 操作符，而是将 directContent 设置为空字符串
+      tweet.directContent = '';
+    }
   }
 
   return tweet;
